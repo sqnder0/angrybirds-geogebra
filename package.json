@@ -1,0 +1,25 @@
+{
+  "name": "angrybirds",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "bundle": "esbuild src/main.js --bundle --format=iife --outfile=geogebra/geogebra_javascript.js",
+    "zip": "cd geogebra && zip -r -FS ../angrybirds.ggb .",
+    "build": "npm run bundle && npm run zip",
+    "watch": "esbuild src/main.js --bundle --format=iife --outfile=geogebra/geogebra_javascript.js --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sqnder0/angrybirds-geogebra.git"
+  },
+  "keywords": [],
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/sqnder0/angrybirds-geogebra/issues"
+  },
+  "homepage": "https://github.com/sqnder0/angrybirds-geogebra#readme",
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}
