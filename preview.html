@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Angry Birds GeoGebra Preview</title>
+    <style>
+      html, body, #ggb-element {
+        width: 100vw;
+        height: 100vh;
+        margin: 0;
+        overflow: hidden;
+      }
+    </style>
+    <script src="https://www.geogebra.org/apps/deployggb.js"></script>
+  </head>
+  <body>
+    <div id="ggb-element"></div>
+    <script>
+      const params = {
+        appName: "classic",
+        filename: "angrybirds.ggb",
+        width: window.innerWidth,
+        height: window.innerHeight,
+        showToolBar: false,
+        showAlgebraInput: false,
+        showMenuBar: false,
+        allowStyleBar: false,
+        showResetIcon: true,
+      };
+
+      const applet = new GGBApplet(params, true);
+      applet.inject("ggb-element");
+    </script>
+  </body>
+</html>
