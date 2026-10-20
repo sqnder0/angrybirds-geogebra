@@ -44,10 +44,15 @@ export function stepMovement(e, dt, now) {
 
     if (e.falling && e.center.y - halfH <= 0) {
         e.center.y = halfH;
-        e.movement.x = 0;
-        e.movement.y = 0;
-        e.falling = false;
-        e.lastMove = now;
+
+        if (Math.abs(e.movement.y) > REST_SPEED) {
+            e.movement.y = -e.movement.y * RESTITUTION;
+            e.movement.x = e.movement.x * RESTITUTION*(3/4);
+        } else {
+            e.movement.x = 0;
+            e.movement.y = 0;
+            e.falling = false;
+        }
     }
 }
 
