@@ -5,8 +5,9 @@
   "main": "index.js",
   "scripts": {
     "bundle": "esbuild src/main.js --bundle --format=iife --outfile=geogebra/geogebra_javascript.js",
-    "zip": "cd geogebra && zip -r -FS ../angrybirds.ggb .",
+    "zip": "cd geogebra && zip -r -FS ../angrybirds.ggb . -x '*.json'",
     "build": "npm run bundle && npm run zip",
+    "serve": "python3 -m http.server 8123 --bind 127.0.0.1",
     "watch": "esbuild src/main.js --bundle --format=iife --outfile=geogebra/geogebra_javascript.js --watch"
   },
   "repository": {

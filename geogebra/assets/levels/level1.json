@@ -1,0 +1,13 @@
+{
+    "name": "Level 1",
+    "goal": 1400,
+    "blocks": [
+        { "id": "b1", "type": "wood/square", "center": { "x": 51, "y": 1 }, "width": 2, "height": 2, "health": 30, "static": false },
+        { "id": "b2", "type": "wood/square", "center": { "x": 51, "y": 3 }, "width": 2, "height": 2, "health": 30, "static": false },
+        { "id": "b3", "type": "wood/square", "center": { "x": 53, "y": 1 }, "width": 2, "height": 2, "health": 30, "static": false },
+        { "id": "b4", "type": "wood/square", "center": { "x": 53, "y": 3 }, "width": 2, "height": 2, "health": 30, "static": false }
+    ],
+    "pigs": [
+        { "name": "king", "type": "king", "center": { "x": 52, "y": 10 }, "width": 3, "height": 3.66, "health": 100, "falling": true }
+    ]
+}

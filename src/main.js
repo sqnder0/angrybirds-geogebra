@@ -1,33 +1,37 @@
-/* ===========================================================
-
-   ANGRY BIRDS IN GEOGEBRA
-
-   ===========================================================
-*/
-
-import { debugging, g, speed, DESPAWN_STATE } from "./config.js";
+import { debugging, g, speed } from "./config.js";
 import { entities } from "./state.js";
 import { tryTo } from "./util.js";
-import { collideWithBlock, stepMovement } from "./physics.js";
-import { JoyStick, Bird, Trajectory, Block } from "./entities.js";
+import { resolveCollision, stepMovement } from "./physics.js";
+import { JoyStick, Bird, Trajectory } from "./entities.js";
+import { levels, levelGoal, loadLevel } from "./level.js";
+import { score } from "./score.js";
+import { Slingshot } from "./slingshot.js";
+import { BirdQueue } from "./queue.js";
+
+const LEVEL = levels.level3;
+const BIRD_IMAGE = "assets/angry-bird.png";
+const BIRD_SIZE = 2;
+const SLING_REST = { x: 0, y: 4 };
+
+const FLIGHT_SETTLE_MS = 1000;
+const MAX_FLIGHT_MS = 10000;
 
 var trajectory = new Trajectory();
 var joystick = new JoyStick(3, -5, 5);
-var bird = new Bird("birdy", "assets/angry-bird.png", 2, 0, 4)
+var slingshot = new Slingshot("assets/slingshot.png", SLING_REST.x, 6, SLING_REST, 1.5);
+var bird = new Bird("birdy", BIRD_IMAGE, BIRD_SIZE, SLING_REST.x, SLING_REST.y);
+var queue = new BirdQueue(BIRD_IMAGE, BIRD_SIZE, (LEVEL.birds ?? 3) - 1, { x: -2.4, y: BIRD_SIZE / 2 }, 2.3);
 
-/* ---------- Runs once when the file opens ---------- */
+var birdState = "loaded";
+var flightStart = 0;
+var stoppedSince = 0;
+
+// Runs once when the file opens
 function ggbOnInit() {
 
     setupElements();
 
-    // TEST
-    const b = new Block("assets/blocks/wood/square", { x: 51, y: 1 }, null, "b1", 2, 2, 30, true);
-    b.create();
-    
-    const b2 = new Block("assets/blocks/wood/square", { x: 51, y: 20 }, null, "b2", 2, 2, 30, false);
-    b2.create();
-
-    setupScene();
+    setupScene(LEVEL);
 
 
     if (!ggbApplet.exists("tAnim")) {
@@ -39,9 +43,10 @@ function ggbOnInit() {
     ggbApplet.registerObjectUpdateListener("tAnim", onTick);
 
     ggbApplet.registerObjectClickListener("launchBtn", onLaunch);
+    ggbApplet.registerObjectUpdateListener("Pouch", onPouchMoved);
 
 
-    // Start physics loop
+    // Start the physics loop
     ggbApplet.setValue("tAnim", 0);
     ggbApplet.setAnimationSpeed("tAnim", 2);
     ggbApplet.setAnimating("tAnim", true);
@@ -56,8 +61,20 @@ function setupElements() {
         joystick.draw();
     });
 
+    tryTo("Slingshot setup", function () {
+        slingshot.create();
+    });
+
     tryTo("bird setup", function () {
         bird.create();
+    });
+
+    tryTo("Bird queue setup", function () {
+        queue.create();
+    });
+
+    tryTo("Score setup", function () {
+        score.create(levelGoal(LEVEL));
     });
 
     tryTo("Variable setup: g", function () {
@@ -94,8 +111,12 @@ function setupElements() {
 }
 
 
-/* ---------- Visual setup of the scene ---------- */
-function setupScene() {
+// Visual setup of the scene
+function setupScene(level) {
+    tryTo("level", function () {
+        loadLevel(level);
+    });
+
     tryTo("background", function () {
         ggbApplet.evalCommand("SetBackgroundColor(0.45, 0.75, 1)");
     });
@@ -103,7 +124,7 @@ function setupScene() {
     tryTo("axes", function () { ggbApplet.setAxesVisible(debugging, debugging); });
     tryTo("grid", function () { ggbApplet.setGridVisible(debugging); });
     tryTo("view", function () {
-        ggbApplet.setCoordSystem(-12, 65, -6, 34);
+        ggbApplet.setCoordSystem(-12, 60, -6, 34);
         ggbApplet.evalCommand("SetAxesRatio(1, 1)");
      });
 
@@ -129,32 +150,89 @@ function setupScene() {
     tryTo("labels", function () {
         var names = ggbApplet.getAllObjectNames();
         for (var i = 0; i < names.length; i++) {
+            if (names[i] === "launchBtn" || names[i] === "scoreText" || names[i] === "endText") continue;
             ggbApplet.setLabelVisible(names[i], false);
         }
     });
 
 };
 
-/* ---------- Runs when the Shoot! button is clicked ---------- */
+// Runs when the Launch! button is clicked
 function onLaunch() {
+    if (birdState !== "loaded") return;
+
     var vPull = joystick.verticalPull();
     var hPull = joystick.horizontalPull();
 
-    bird.center.x = 0;
-    bird.center.y = 4;
+    var pouch = slingshot.pouch();
+    bird.center.x = pouch.x;
+    bird.center.y = pouch.y;
 
     bird.movement.x = speed * vPull;
     bird.movement.y = speed * hPull;
 
     bird.falling = true;
+    slingshot.setLoaded(false);
+
+    birdState = "flying";
+    flightStart = Date.now();
+    stoppedSince = 0;
 
     trajectory.visible = false;
     trajectory.update();
 }
 
+// The bird on the slingshot follows the pouch while aiming
+function onPouchMoved() {
+    if (birdState !== "loaded") return;
+    var pouch = slingshot.pouch();
+    bird.center.x = pouch.x;
+    bird.center.y = pouch.y;
+    bird.draw();
+}
 
-/* ---------- Runs on EVERY update of tAnim (many times per second) ---------- */
+// Ends a flight and brings the next bird from the queue
+function updateBirdCycle(now) {
+    queue.update(now);
+    if (birdState !== "flying") return;
 
+    var stopped = !bird.falling && bird.movement.x === 0 && bird.movement.y === 0;
+    stoppedSince = stopped ? (stoppedSince || now) : 0;
+    var gone = bird.center.x > 80 || bird.center.x < -20;
+    var settled = stopped && now - stoppedSince > FLIGHT_SETTLE_MS;
+    if (!gone && !settled && now - flightStart < MAX_FLIGHT_MS) return;
+
+    ggbApplet.setVisible(`${bird.name}Img`, false);
+    bird.movement.x = 0;
+    bird.movement.y = 0;
+    bird.falling = false;
+    bird.angle = 0;
+    bird.spin = 0;
+    bird.center.x = SLING_REST.x;
+    bird.center.y = SLING_REST.y;
+    bird.draw();
+
+    if (queue.next(SLING_REST, now, onBirdLoaded)) {
+        birdState = "reloading";
+    } else {
+        birdState = "empty";
+        score.showResult();
+    }
+}
+
+// The next bird landed on the slingshot
+function onBirdLoaded() {
+    slingshot.setLoaded(true);
+    birdState = "loaded";
+    onPouchMoved();
+    ggbApplet.setVisible(`${bird.name}Img`, true);
+
+    trajectory.visible = true;
+    trajectory.update();
+}
+
+
+// Runs on every update of tAnim, dt is measured with Date.now() because tick length isn't fixed
 var lastTick = 0;
 
 function onTick() {
@@ -166,7 +244,6 @@ function onTick() {
 }
 
 function tickPhysics() {
-    // Run some basic physics
     var now = Date.now();
     var dt;
 
@@ -178,27 +255,29 @@ function tickPhysics() {
 
     lastTick = now;
 
+    updateBirdCycle(now);
+
     if (dt === 0) return;
 
     dt = Math.min(dt, 1 / 30);
 
     for (const e of entities) {
-        if (e.isStatic) continue;
+        if (e.isStatic || e.despawned) continue;
         if (!e.falling && e.movement.x === 0 && e.movement.y === 0) continue;
 
         stepMovement(e, dt, now);
 
         for (const other of entities) {
             if (other === e) continue;
-            const damage = collideWithBlock(e, other);
-            if (damage > 0 && other.damage) other.damage(damage);
+            resolveCollision(e, other);
+            if (e.despawned) break;
         }
 
         e.draw();
     }
 }
 
-// GeoGebra looks these up as globals
 globalThis.ggbOnInit = ggbOnInit;
 globalThis.onLaunch = onLaunch;
 globalThis.onTick = onTick;
+globalThis.onPouchMoved = onPouchMoved;

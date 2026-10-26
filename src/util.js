@@ -1,9 +1,9 @@
-/* Call stuff in tryto to not block the game when errors appear. */
+// Wrap setup steps in tryTo so one error doesn't block the rest of the game
 export function tryTo(label, fn) {
     try { fn(); } catch (e) { console.log("Step failed:", label, String(e)); }
 }
 
-/*Capitalization of point names*/
+// GeoGebra point names have to start with a capital
 export function capitalize(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
 }
@@ -33,4 +33,19 @@ export function modify(label, {color, labelVisible, visible} = {}){
         });
     }
 
+}
+
+// evalXML rebuilds the whole construction on every call, which gets slow with many objects.
+// Elements are collected with queueXML and added together in one flushXML call.
+let pendingXML = "";
+
+export function queueXML(xml) {
+    pendingXML += xml;
+}
+
+export function flushXML() {
+    if (!pendingXML) return;
+    const xml = pendingXML;
+    pendingXML = "";
+    ggbApplet.evalXML(xml);
 }

@@ -1,36 +1,17 @@
-import { g, RESTITUTION, DAMAGE_PER_SPEED, DESPAWN_STATE, REST_SPEED } from "./config.js";
+import { g, RESTITUTION_Y, DAMAGE_PER_SPEED, REST_SPEED, RESTITUTION_X, MIN_SUPPORT_NORMAL_Y, MIN_PUSH_DOWN_NORMAL_Y, ROLL_FRICTION, ROLL_STOP_SPEED } from "./config.js";
 
-export function makeRectangleHitbox(width, height) {
-    return [
-        { x: -width / 2, y: -height / 2 },
-        { x:  width / 2, y: -height / 2 },
-        { x:  width / 2, y:  height / 2 },
-        { x: -width / 2, y:  height / 2 }
-    ];
+function rollFriction(e, dt) {
+    const slow = ROLL_FRICTION * dt;
+    e.movement.x = Math.abs(e.movement.x) <= slow ? 0 : e.movement.x - Math.sign(e.movement.x) * slow;
 }
 
-export function makeRightTriangleHitbox(width, height) {
-    return [
-        { x: -width / 2, y: -height / 2 },
-        { x:  width / 2, y: -height / 2 },
-        { x: -width / 2, y:  height / 2 }
-    ];
-}
-
-export function getWorldVertices(entity) {
-    const angle = entity.angle ?? 0;
-    const cosAngle = Math.cos(angle);
-    const sinAngle = Math.sin(angle);
-
-    return entity.hitbox.map(localVertex => ({
-        x: entity.center.x + localVertex.x * cosAngle - localVertex.y * sinAngle,
-        y: entity.center.y + localVertex.x * sinAngle + localVertex.y * cosAngle
-    }));
-}
-
-/* Move e by one time step of dt seconds, applying gravity and landing on the ground. */
 export function stepMovement(e, dt, now) {
-    const halfH = (e.height ?? e.width) / 2;
+    const halfH = e.hitbox.halfHeight();
+
+    if (e.rolls && e.grounded) rollFriction(e, dt);
+
+    e.supportedBy = null;
+    e.grounded = false;
 
 
     if (e.falling) {
@@ -46,57 +27,109 @@ export function stepMovement(e, dt, now) {
         e.center.y = halfH;
 
         if (Math.abs(e.movement.y) > REST_SPEED) {
-            e.movement.y = -e.movement.y * RESTITUTION;
-            e.movement.x = e.movement.x * RESTITUTION*(3/4);
+            e.movement.y = -e.movement.y * RESTITUTION_Y;
+            e.movement.x = e.movement.x * RESTITUTION_X;
+
+
+        } else if (e.rolls && Math.abs(e.movement.x) > ROLL_STOP_SPEED) {
+            e.movement.y = 0;
+            e.grounded = true;
+            e.spin = -e.movement.x / e.hitbox.radius;
         } else {
             e.movement.x = 0;
             e.movement.y = 0;
             e.falling = false;
+            e.spin = 0;
         }
     }
+
+    if (e.rolls) e.angle += e.spin * dt;
+
+    e.hitbox.moveTo(e.center);
 }
 
-/* Push e out of block b and bounce it. Returns the damage b should take (0 if no contact). */
-export function collideWithBlock(e, b) {
-    if (b.state === DESPAWN_STATE) return 0;
+function keepAboveGround(e) {
+    const halfH = e.hitbox.halfHeight();
+    if (e.center.y - halfH < 0) e.center.y = halfH;
+}
 
-    const eh = (e.height ?? e.width) / 2;
-    const ew = e.width / 2;
+function isSupported(e) {
+    for (let i = 0; e && i < 16; i++, e = e.supportedBy) {
+        if (e.despawned) return false;
+        if (e.isStatic || !e.falling) return true;
+    }
+    return false;
+}
 
-    const dx = e.center.x - b.center.x;
-    const dy = e.center.y - b.center.y;
+function inverseMass(other, normal) {
+    if (other.isStatic) return 0;
+    if (normal.y > MIN_PUSH_DOWN_NORMAL_Y && isSupported(other)) return 0;
+    return 1 / other.mass;
+}
 
-    const overlapX = ew + b.width / 2 - Math.abs(dx);
-    const overlapY = eh + b.height / 2 - Math.abs(dy);
+export function resolveCollision(e, other) {
+    if (e.despawned || other.despawned) return;
 
-    if (overlapX <= 0 || overlapY <= 0) return 0;   // no contact
+    e.hitbox.moveTo(e.center);
+    other.hitbox.moveTo(other.center);
 
-    const impactSpeed = Math.hypot(e.movement.x, e.movement.y);
+    const hit = e.hitbox.collide(other.hitbox);
+    if (!hit) return;
 
-    if (overlapX < overlapY) {
-        const dir = Math.sign(dx) || 1;
-        const hitSpeedX = e.movement.x;  
-        e.center.x += dir * overlapX;
-        if (e.movement.x * dir < 0) e.movement.x = -e.movement.x * RESTITUTION;
+    const n = hit.normal;
+    const invE = 1 / e.mass;
+    const invO = inverseMass(other, n);
+    const invSum = invE + invO;
 
-        if (!b.isStatic) {
-            b.movement.x += hitSpeedX * 0.5;
-            b.falling = true;
-        }
+    if (n.y > MIN_SUPPORT_NORMAL_Y && invO === 0) e.supportedBy = other;
 
-    } else {
-        // hit the top or bottom
-        const dir = Math.sign(dy) || 1;
-        e.center.y += dir * overlapY;
-        if (e.movement.y * dir < 0) {
-            e.movement.y = impactSpeed < REST_SPEED ? 0 : -e.movement.y * RESTITUTION;
-        }
+    e.center.x += n.x * hit.depth * invE / invSum;
+    e.center.y += n.y * hit.depth * invE / invSum;
+    other.center.x -= n.x * hit.depth * invO / invSum;
+    other.center.y -= n.y * hit.depth * invO / invSum;
+    keepAboveGround(e);
+    keepAboveGround(other);
+    e.hitbox.moveTo(e.center);
+    other.hitbox.moveTo(other.center);
 
-        if (dir > 0 && Math.abs(e.movement.y) < REST_SPEED) {
-            e.movement.y = 0;
-            e.center.y = b.center.y + b.height / 2 + eh;
-        }
+    if (invO > 0) other.falling = true;
+
+    const relX = e.movement.x - other.movement.x;
+    const relY = e.movement.y - other.movement.y;
+    const vn = relX * n.x + relY * n.y;
+    if (vn >= 0) return;
+
+    const tx = relX - vn * n.x;
+    const ty = relY - vn * n.y;
+
+    const impactSpeed = -vn;
+    const ax = Math.abs(n.x);
+    const ay = Math.abs(n.y);
+    const rx = (e.restitution.x + other.restitution.x) / 2;
+    const ry = (e.restitution.y + other.restitution.y) / 2;
+
+    const resting = impactSpeed < REST_SPEED && ay > MIN_SUPPORT_NORMAL_Y;
+
+    const normalRestitution = resting ? 0 : ax * rx + ay * ry;
+    const tangentRestitution = e.rolls ? 1 : resting ? 0 : ax + ay * rx;
+
+    const jn = -(1 + normalRestitution) * vn / invSum;
+    const jx = jn * n.x - (1 - tangentRestitution) * tx / invSum;
+    const jy = jn * n.y - (1 - tangentRestitution) * ty / invSum;
+
+    e.movement.x += jx * invE;
+    e.movement.y += jy * invE;
+    other.movement.x -= jx * invO;
+    other.movement.y -= jy * invO;
+
+    if (e.rolls && n.y > 0) {
+        e.spin = -(e.movement.x * n.y - e.movement.y * n.x) / e.hitbox.radius;
+        if (n.y > MIN_SUPPORT_NORMAL_Y) e.grounded = true;
     }
 
-    return Math.round(impactSpeed * DAMAGE_PER_SPEED);
+    const damage = Math.round(impactSpeed * DAMAGE_PER_SPEED);
+    if (damage > 0) {
+        e.damage?.(damage);
+        other.damage?.(damage);
+    }
 }
