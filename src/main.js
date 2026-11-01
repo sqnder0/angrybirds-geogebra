@@ -7,6 +7,7 @@ import { levels, levelGoal, loadLevel } from "./level.js";
 import { score } from "./score.js";
 import { Slingshot } from "./slingshot.js";
 import { BirdQueue } from "./queue.js";
+import ASSETS from "assets";
 
 const LEVEL = levels.level3;
 const BIRD_IMAGE = "assets/angry-bird.png";
@@ -28,6 +29,11 @@ var stoppedSince = 0;
 
 // Runs once when the file opens
 function ggbOnInit() {
+
+    // The images live in the bundle, so they still work after uploading the .ggb
+    for (const name in ASSETS) {
+        tryTo("Add image " + name, () => ggbApplet.addImage(name, ASSETS[name]));
+    }
 
     setupElements();
 

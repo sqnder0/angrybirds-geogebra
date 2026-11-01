@@ -15,7 +15,7 @@ But, yes, Angry Birds. In GeoGebra. The graphing calculator. Not a game engine, 
 ```bash
 npm install
 npm run build   # bundles src/ into geogebra/geogebra_javascript.js and zips geogebra/ into angrybirds.ggb
-npm run watch   # rebundles on every save, you still need to zip
+npm run watch   # rebundles on every save, you still need to build to get a new .ggb
 npm run serve   # local server for preview.html
 ```
 
@@ -26,7 +26,9 @@ A `.ggb` file is just a zip. If you unzip one you get:
 - `geogebra.xml`: all your variables, objects and stuff
 - `geogebra_javascript.js`: the global javascript of the file
 
-So the whole game is written in normal js modules in `src/`, esbuild smashes them into one file, and then it gets zipped back together with the assets into a `.ggb`.
+So the whole game is written in normal js modules in `src/`, esbuild smashes them into one file, and then it gets zipped back into a `.ggb` (`scripts/build.js`).
+
+The images are NOT loose files in the zip. When you upload a `.ggb` to geogebra.org (or save it again) GeoGebra throws away every image the construction doesn't use yet, and ours only get created from js. So all pngs in `geogebra/assets/` get baked into the bundle as data urls and registered with `ggbApplet.addImage` on startup.
 
 The javascript GeoGebra runs is sandboxed, so no `setInterval`, no `requestAnimationFrame`, none of that. Everything gets created from js with `ggbApplet.evalCommand` and `ggbApplet.evalXML` when the file opens.
 

@@ -4,11 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "bundle": "esbuild src/main.js --bundle --format=iife --outfile=geogebra/geogebra_javascript.js",
-    "zip": "cd geogebra && zip -r -FS ../angrybirds.ggb . -x '*.json'",
-    "build": "npm run bundle && npm run zip",
+    "bundle": "node scripts/build.js --bundle-only",
+    "build": "node scripts/build.js",
     "serve": "python3 -m http.server 8123 --bind 127.0.0.1",
-    "watch": "esbuild src/main.js --bundle --format=iife --outfile=geogebra/geogebra_javascript.js --watch"
+    "watch": "node scripts/build.js --watch"
   },
   "repository": {
     "type": "git",
@@ -21,6 +20,7 @@
   },
   "homepage": "https://github.com/sqnder0/angrybirds-geogebra#readme",
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "fflate": "^0.8.2"
   }
 }
