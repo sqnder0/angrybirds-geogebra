@@ -1,6 +1,6 @@
 import { debugging, g, speed } from "./config.js";
 import { entities } from "./state.js";
-import { tryTo } from "./util.js";
+import { runRetries, tryOrRetry, tryTo } from "./util.js";
 import { resolveCollision, stepMovement } from "./physics.js";
 import { JoyStick, Bird, Trajectory } from "./entities.js";
 import { levels, levelGoal, loadLevel } from "./level.js";
@@ -35,28 +35,38 @@ function ggbOnInit() {
         tryTo("Add image " + name, () => ggbApplet.addImage(name, ASSETS[name]));
     }
 
-    setupElements();
+    tryTo("Elements", setupElements);
 
-    setupScene(LEVEL);
+    tryTo("Scene", () => setupScene(LEVEL));
 
+    // Made with xml, the Slider command isn't loaded yet on geogebra.org when this runs
+    tryTo("Animation slider", function () {
+        if (!ggbApplet.exists("tAnim")) {
+            ggbApplet.evalXML(`
+            <element type="numeric" label="tAnim">
+                <value val="0"/>
+                <slider min="0" max="1" width="200" x="38" y="58" fixed="true" horizontal="true" showAlgebra="true"/>
+                <show object="false" label="false"/>
+                <animation step="0.0001" speed="2" type="0" playing="false"/>
+            </element>`);
+        }
+        ggbApplet.setVisible("tAnim", false);
+        ggbApplet.setAnimating("tAnim", false);
+    });
 
-    if (!ggbApplet.exists("tAnim")) {
-        ggbApplet.evalCommand("tAnim = Slider(0, 1, 0.0001)");
-    }
-    ggbApplet.setVisible("tAnim", false);
-    ggbApplet.setAnimating("tAnim", false);
-
-    ggbApplet.registerObjectUpdateListener("tAnim", onTick);
-
-    ggbApplet.registerObjectClickListener("launchBtn", onLaunch);
-    ggbApplet.registerObjectUpdateListener("Pouch", onPouchMoved);
-
+    tryTo("Listener: tick", () => ggbApplet.registerObjectUpdateListener("tAnim", onTick));
+    tryTo("Listener: launch", () => ggbApplet.registerObjectClickListener("launchBtn", onLaunch));
+    tryTo("Listener: pouch", () => ggbApplet.registerObjectUpdateListener("Pouch", onPouchMoved));
 
     // Start the physics loop
-    ggbApplet.setValue("tAnim", 0);
-    ggbApplet.setAnimationSpeed("tAnim", 2);
-    ggbApplet.setAnimating("tAnim", true);
-    ggbApplet.startAnimation();
+    tryTo("Start animation", function () {
+        ggbApplet.setValue("tAnim", 0);
+        ggbApplet.setAnimationSpeed("tAnim", 2);
+        ggbApplet.setAnimating("tAnim", true);
+        ggbApplet.startAnimation();
+    });
+
+    if (debugging) console.log("[angrybirds] init done, tAnim:", ggbApplet.exists("tAnim"), "running:", ggbApplet.isAnimationRunning());
 }
 
 
@@ -91,7 +101,7 @@ function setupElements() {
         ggbApplet.evalCommand(`v = ${speed}`);
     });
 
-    trajectory.setup();
+    tryTo("Trajectory setup", () => trajectory.setup());
 
     tryTo("Button setup:", function () {
         ggbApplet.evalXML(`
@@ -123,13 +133,13 @@ function setupScene(level) {
         loadLevel(level);
     });
 
-    tryTo("background", function () {
+    tryOrRetry("background", function () {
         ggbApplet.evalCommand("SetBackgroundColor(0.45, 0.75, 1)");
     });
 
     tryTo("axes", function () { ggbApplet.setAxesVisible(debugging, debugging); });
     tryTo("grid", function () { ggbApplet.setGridVisible(debugging); });
-    tryTo("view", function () {
+    tryOrRetry("view", function () {
         ggbApplet.setCoordSystem(-12, 60, -6, 34);
         ggbApplet.evalCommand("SetAxesRatio(1, 1)");
      });
@@ -165,6 +175,11 @@ function setupScene(level) {
 
 // Runs when the Launch! button is clicked
 function onLaunch() {
+    tryTo("Launch", launch);
+}
+
+function launch() {
+    if (debugging) console.log("[angrybirds] launch, state:", birdState);
     if (birdState !== "loaded") return;
 
     var vPull = joystick.verticalPull();
@@ -190,6 +205,10 @@ function onLaunch() {
 
 // The bird on the slingshot follows the pouch while aiming
 function onPouchMoved() {
+    tryTo("Pouch moved", movePouch);
+}
+
+function movePouch() {
     if (birdState !== "loaded") return;
     var pouch = slingshot.pouch();
     bird.center.x = pouch.x;
@@ -242,11 +261,7 @@ function onBirdLoaded() {
 var lastTick = 0;
 
 function onTick() {
-    try {
-        tickPhysics();
-    } catch (err) {
-        console.error("onTick failed:", err);
-    }
+    tryTo("Tick", tickPhysics);
 }
 
 function tickPhysics() {
@@ -261,6 +276,7 @@ function tickPhysics() {
 
     lastTick = now;
 
+    runRetries();
     updateBirdCycle(now);
 
     if (dt === 0) return;

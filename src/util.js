@@ -1,6 +1,25 @@
 // Wrap setup steps in tryTo so one error doesn't block the rest of the game
 export function tryTo(label, fn) {
-    try { fn(); } catch (e) { console.log("Step failed:", label, String(e)); }
+    // console.log, console.error doesn't show up from the geogebra.org sandbox
+    try { return fn(); } catch (e) { console.log("[angrybirds] Step failed:", label, String(e), e && e.stack); }
+}
+
+// On geogebra.org the scripting commands (SetBackgroundColor, ...) load after ggbOnInit runs.
+// Steps that need them are tried again on every tick until they work.
+let retries = [];
+
+export function tryOrRetry(label, fn) {
+    try { fn(); } catch (e) {
+        if (!String(e).includes("not loaded yet")) return tryTo(label, fn);
+        retries.push({ label, fn });
+    }
+}
+
+export function runRetries() {
+    if (!retries.length) return;
+    const pending = retries;
+    retries = [];
+    for (const r of pending) tryOrRetry(r.label, r.fn);
 }
 
 // GeoGebra point names have to start with a capital

@@ -23,10 +23,25 @@
   // src/util.js
   function tryTo(label, fn) {
     try {
+      return fn();
+    } catch (e) {
+      console.log("[angrybirds] Step failed:", label, String(e), e && e.stack);
+    }
+  }
+  var retries = [];
+  function tryOrRetry(label, fn) {
+    try {
       fn();
     } catch (e) {
-      console.log("Step failed:", label, String(e));
+      if (!String(e).includes("not loaded yet")) return tryTo(label, fn);
+      retries.push({ label, fn });
     }
+  }
+  function runRetries() {
+    if (!retries.length) return;
+    const pending = retries;
+    retries = [];
+    for (const r of pending) tryOrRetry(r.label, r.fn);
   }
   function capitalize(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
@@ -1011,20 +1026,31 @@
     for (const name in assets_default) {
       tryTo("Add image " + name, () => ggbApplet.addImage(name, assets_default[name]));
     }
-    setupElements();
-    setupScene(LEVEL);
-    if (!ggbApplet.exists("tAnim")) {
-      ggbApplet.evalCommand("tAnim = Slider(0, 1, 0.0001)");
-    }
-    ggbApplet.setVisible("tAnim", false);
-    ggbApplet.setAnimating("tAnim", false);
-    ggbApplet.registerObjectUpdateListener("tAnim", onTick);
-    ggbApplet.registerObjectClickListener("launchBtn", onLaunch);
-    ggbApplet.registerObjectUpdateListener("Pouch", onPouchMoved);
-    ggbApplet.setValue("tAnim", 0);
-    ggbApplet.setAnimationSpeed("tAnim", 2);
-    ggbApplet.setAnimating("tAnim", true);
-    ggbApplet.startAnimation();
+    tryTo("Elements", setupElements);
+    tryTo("Scene", () => setupScene(LEVEL));
+    tryTo("Animation slider", function() {
+      if (!ggbApplet.exists("tAnim")) {
+        ggbApplet.evalXML(`
+            <element type="numeric" label="tAnim">
+                <value val="0"/>
+                <slider min="0" max="1" width="200" x="38" y="58" fixed="true" horizontal="true" showAlgebra="true"/>
+                <show object="false" label="false"/>
+                <animation step="0.0001" speed="2" type="0" playing="false"/>
+            </element>`);
+      }
+      ggbApplet.setVisible("tAnim", false);
+      ggbApplet.setAnimating("tAnim", false);
+    });
+    tryTo("Listener: tick", () => ggbApplet.registerObjectUpdateListener("tAnim", onTick));
+    tryTo("Listener: launch", () => ggbApplet.registerObjectClickListener("launchBtn", onLaunch));
+    tryTo("Listener: pouch", () => ggbApplet.registerObjectUpdateListener("Pouch", onPouchMoved));
+    tryTo("Start animation", function() {
+      ggbApplet.setValue("tAnim", 0);
+      ggbApplet.setAnimationSpeed("tAnim", 2);
+      ggbApplet.setAnimating("tAnim", true);
+      ggbApplet.startAnimation();
+    });
+    if (debugging) console.log("[angrybirds] init done, tAnim:", ggbApplet.exists("tAnim"), "running:", ggbApplet.isAnimationRunning());
   }
   function setupElements() {
     tryTo("Joystick setup", function() {
@@ -1048,7 +1074,7 @@
     tryTo("Variable setup: v", function() {
       ggbApplet.evalCommand(`v = ${speed}`);
     });
-    trajectory.setup();
+    tryTo("Trajectory setup", () => trajectory.setup());
     tryTo("Button setup:", function() {
       ggbApplet.evalXML(`
             <element type="button" label="launchBtn">
@@ -1071,7 +1097,7 @@
     tryTo("level", function() {
       loadLevel(level);
     });
-    tryTo("background", function() {
+    tryOrRetry("background", function() {
       ggbApplet.evalCommand("SetBackgroundColor(0.45, 0.75, 1)");
     });
     tryTo("axes", function() {
@@ -1080,7 +1106,7 @@
     tryTo("grid", function() {
       ggbApplet.setGridVisible(debugging);
     });
-    tryTo("view", function() {
+    tryOrRetry("view", function() {
       ggbApplet.setCoordSystem(-12, 60, -6, 34);
       ggbApplet.evalCommand("SetAxesRatio(1, 1)");
     });
@@ -1116,6 +1142,10 @@
     });
   }
   function onLaunch() {
+    tryTo("Launch", launch);
+  }
+  function launch() {
+    if (debugging) console.log("[angrybirds] launch, state:", birdState);
     if (birdState !== "loaded") return;
     var vPull = joystick.verticalPull();
     var hPull = joystick.horizontalPull();
@@ -1133,6 +1163,9 @@
     trajectory.update();
   }
   function onPouchMoved() {
+    tryTo("Pouch moved", movePouch);
+  }
+  function movePouch() {
     if (birdState !== "loaded") return;
     var pouch = slingshot.pouch();
     bird.center.x = pouch.x;
@@ -1173,11 +1206,7 @@
   }
   var lastTick = 0;
   function onTick() {
-    try {
-      tickPhysics();
-    } catch (err) {
-      console.error("onTick failed:", err);
-    }
+    tryTo("Tick", tickPhysics);
   }
   function tickPhysics() {
     var now = Date.now();
@@ -1188,6 +1217,7 @@
       dt = (now - lastTick) / 1e3;
     }
     lastTick = now;
+    runRetries();
     updateBirdCycle(now);
     if (dt === 0) return;
     dt = Math.min(dt, 1 / 30);
